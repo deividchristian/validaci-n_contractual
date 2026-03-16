@@ -4,10 +4,17 @@ import docx
 import io
 import json
 import base64
+import os
 import google.generativeai as genai
 
-# 1. Configuración de Gemini
-genai.configure(api_key="AIzaSyBlLQDOlYQEQJNtgmnfW7sZf-0wPzNYLPc")
+# 1. Configuración de Gemini (De forma segura con variables de entorno)
+llave_secreta = os.getenv("GEMINI_API_KEY")
+
+# Validación por si Render aún no carga la llave
+if not llave_secreta:
+    raise ValueError("No se encontró GEMINI_API_KEY en las variables de entorno.")
+
+genai.configure(api_key=llave_secreta)
 modelo = genai.GenerativeModel(
     'gemini-2.5-flash',
     generation_config={"response_mime_type": "application/json"}
