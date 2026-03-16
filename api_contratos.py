@@ -7,10 +7,9 @@ import base64
 import os
 import google.generativeai as genai
 
-# 1. Configuración de Gemini (De forma segura con variables de entorno)
+# 1. Configuración de Gemini (De forma segura)
 llave_secreta = os.getenv("GEMINI_API_KEY")
 
-# Validación por si Render aún no carga la llave
 if not llave_secreta:
     raise ValueError("No se encontró GEMINI_API_KEY en las variables de entorno.")
 
@@ -22,7 +21,6 @@ modelo = genai.GenerativeModel(
 
 app = FastAPI(title="Auditor Legal IA - MVP")
 
-# 2. Definimos la estructura que esperamos recibir de Power Automate
 class PeticionContrato(BaseModel):
     nombre_archivo: str
     archivo_base64: str
@@ -33,15 +31,11 @@ async def auditar_contrato(peticion: PeticionContrato):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos .docx.")
     
     try:
-        # 3. Decodificamos el Base64 a binario nuevamente
         contenido_binario = base64.b64decode(peticion.archivo_base64)
-        
-        # 4. Leemos el Word en memoria
         documento_io = io.BytesIO(contenido_binario)
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-        # 5. El Prompt Maestro
         prompt = f"""
         Eres un auditor legal experto en normativas bancarias, específicamente DORA y RGPD.
         Tu tarea es analizar el contrato proporcionado y generar un reporte de cumplimiento en formato JSON.
@@ -86,8 +80,8 @@ async def auditar_contrato(peticion: PeticionContrato):
         {texto_completo}
         """
 
-        # 6. Llamada a la IA y retorno
-        respuesta = modelo.generate_content(prompt)
+        # ¡AQUÍ ESTÁ LA MAGIA ASÍNCRONA QUE EVITA QUE EL SERVIDOR SE APAGUE!
+        respuesta = await modelo.generate_content_async(prompt)
         resultado_json = json.loads(respuesta.text)
         return resultado_json
 
