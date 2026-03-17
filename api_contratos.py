@@ -6,6 +6,7 @@ import json
 import base64
 import os
 import asyncio
+import PyPDF2
 import google.generativeai as genai
 
 llave_secreta = os.getenv("GEMINI_API_KEY")
@@ -19,28 +20,25 @@ modelo = genai.GenerativeModel(
     generation_config={"response_mime_type": "application/json"}
 )
 
-app = FastAPI(title="Auditor Legal IA - Enterprise")
+app = FastAPI(title="Auditor Legal IA - RAG Documental Real")
+
+def leer_pdf_completo(ruta_archivo):
+    texto_extraido = ""
+    try:
+        with open(ruta_archivo, "rb") as archivo:
+            lector = PyPDF2.PdfReader(archivo)
+            for pagina in lector.pages:
+                texto_extraido += pagina.extract_text() + "\n"
+    except Exception:
+        texto_extraido = "Error al leer el documento legal."
+    return texto_extraido
+
+LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
+LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
 class PeticionContrato(BaseModel):
     nombre_archivo: str
     archivo_base64: str
-
-BASE_LEGAL_RGPD = """
-ARTÍCULO 28: El tratamiento por el encargado se regirá por un contrato que estipule que tratará los datos únicamente siguiendo instrucciones documentadas, garantizará confidencialidad, y no subcontratará sin autorización.
-ARTÍCULO 32: Aplicar medidas técnicas y organizativas para garantizar un nivel de seguridad adecuado.
-ARTÍCULO 33/34: Obligación de notificar violaciones de seguridad sin dilación indebida.
-CAPÍTULO V: Prohibida la transferencia de datos fuera del EEE sin garantías adecuadas.
-"""
-
-BASE_LEGAL_DORA = """
-ARTÍCULO 30: Los acuerdos sobre servicios TIC incluirán:
-a) descripción clara de funciones TIC.
-b) disposiciones sobre disponibilidad, autenticidad e integridad.
-c) Acuerdos de Nivel de Servicio (SLA) cuantitativos.
-d) derecho de acceso, inspección y auditoría sin restricciones.
-e) obligaciones claras en caso de incidentes.
-f) estrategias de salida con periodos de transición obligatorios.
-"""
 
 @app.post("/auditar-contrato")
 async def auditar_contrato(peticion: PeticionContrato):
@@ -60,35 +58,38 @@ async def auditar_contrato(peticion: PeticionContrato):
         """
 
         prompt_rgpd = f"""
-        Eres un auditor legal experto. Evalúa 5 controles: Encargado de tratamiento, DPA, Transferencias, Seguridad, Brechas.
+        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD).
         
-        [LEY EUROPEA DE REFERENCIA]
-        {BASE_LEGAL_RGPD}
+        [LEY EUROPEA DE REFERENCIA - TEXTO COMPLETO]
+        {LEY_RGPD_COMPLETA}
         
-        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
-        Ejemplo 1: Si el contrato remite a un "Anexo IV" para el tratamiento de datos pero el anexo no está en el texto.
-        Evaluación -> estado: "Riesgo", observacion: "Se menciona un DPA en Anexo IV, pero al no estar adjunto no se puede validar el Art. 28."
-        Ejemplo 2: Si no menciona nada sobre transferencias fuera de Europa.
-        Evaluación -> estado: "Falta", observacion: "Omisión total sobre transferencias internacionales (Capítulo V)."
-
-        Regla: Extrae "evidencia_textual". Si no hay, pon "No se encontró cláusula".
+        Evalúa EXHAUSTIVAMENTE estos 5 controles contra el texto legal:
+        1. Encargado de tratamiento y Devolución/Destrucción de datos al finalizar el servicio
+        2. Acuerdo de tratamiento de datos (DPA) detallado
+        3. Transferencias internacionales (Capítulo V)
+        4. Seguridad de la información y Notificación de Brechas
+        5. Asistencia al Responsable en Derechos ARCO y sometimiento a Auditorías
+        
+        Regla: Extrae "evidencia_textual". Si el contrato omite cualquier exigencia del RGPD, estado es "Falta" o "Riesgo".
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_rgpd": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
         """
 
         prompt_dora = f"""
-        Eres un auditor legal experto. Evalúa 6 controles: Descripción del servicio, SLA, Gestión de incidentes, Derechos de auditoría, Subcontratación, Estrategia de salida.
+        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento DORA.
         
-        [NORMATIVA BANCARIA DORA]
-        {BASE_LEGAL_DORA}
+        [NORMATIVA BANCARIA DORA - TEXTO COMPLETO]
+        {LEY_DORA_COMPLETA}
         
-        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
-        Ejemplo 1 (Auditoría): Si el contrato exige "previo aviso" para auditar.
-        Evaluación -> estado: "Riesgo", observacion: "Permite auditoría pero exige previo aviso, limitando el acceso sin restricciones que pide DORA."
-        Ejemplo 2 (Subcontratación): Si permite subcontratar pero exige autorización previa del cliente.
-        Evaluación -> estado: "OK", observacion: "Cumple al exigir control sobre la cadena de subcontratación."
-
-        Regla: Extrae "evidencia_textual". Si no hay, pon "No se encontró cláusula".
+        Evalúa EXHAUSTIVAMENTE estos 6 controles contra el texto legal:
+        1. Descripción de funciones, ubicación de prestación del servicio y ubicación de los datos
+        2. SLA y Gestión de incidentes TIC
+        3. Derechos de acceso y auditoría sin restricciones (incluyendo locales físicos)
+        4. Subcontratación y aplicación a la cadena de proveedores
+        5. Estrategias de salida e interrupciones imprevistas
+        6. Medidas de seguridad e integridad TIC
+        
+        Regla: Extrae "evidencia_textual". Si el contrato omite cualquier exigencia de DORA, estado es "Falta" o "Riesgo".
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_dora": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
         """
