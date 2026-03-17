@@ -19,7 +19,7 @@ modelo = genai.GenerativeModel(
     generation_config={"response_mime_type": "application/json"}
 )
 
-app = FastAPI(title="Auditor Legal IA - Enterprise Final")
+app = FastAPI(title="Auditor Legal IA")
 
 def leer_pdf_completo(ruta_archivo):
     texto_extraido = ""
@@ -29,7 +29,7 @@ def leer_pdf_completo(ruta_archivo):
             for pagina in lector.pages:
                 texto_extraido += pagina.extract_text() + "\n"
     except Exception:
-        texto_extraido = "Error al leer el documento legal."
+        texto_extraido = "Error al leer el documento."
     return texto_extraido
 
 LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
@@ -51,31 +51,27 @@ async def auditar_contrato(peticion: PeticionContrato):
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
         prompt_maestro = f"""
-        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
+        Eres un auditor legal. Evalúa el contrato contra el RGPD y DORA.
         
-        [LEY EUROPEA DE REFERENCIA RGPD]
+        [LEY RGPD]
         {LEY_RGPD_COMPLETA}
         
-        [NORMATIVA BANCARIA DORA]
+        [LEY DORA]
         {LEY_DORA_COMPLETA}
         
-        [CONTRATO A ANALIZAR]
+        [CONTRATO]
         {texto_completo}
         
-        TAREAS OBLIGATORIAS:
-        1. Extrae la información básica: proveedor, tipo_contrato, duracion, fecha.
+        TAREAS:
+        1. Extrae: proveedor, tipo_contrato, duracion, fecha.
         2. Evalúa 5 controles RGPD: Encargado de tratamiento y Devolución/Destrucción, DPA, Transferencias internacionales, Seguridad y Brechas, Asistencia en Derechos ARCO y Auditorías.
         3. Evalúa 6 controles DORA: Descripción de funciones y ubicación, SLA y Gestión de incidentes, Derechos de acceso y auditoría sin restricciones, Subcontratación, Estrategias de salida, Medidas de seguridad TIC.
         
-        [EJEMPLOS DE CALIBRACIÓN]
-        - Si el contrato remite a un "Anexo IV" para datos pero no está adjunto -> estado: "Riesgo", observacion: "Falta Anexo IV para validar DPA."
-        - Si exige "previo aviso" para auditar -> estado: "Riesgo", observacion: "Limita el acceso sin restricciones exigido."
-        
-        REGLAS DE FORMATO ESTRICTAS:
+        REGLAS:
         - 'observacion': Máximo 12 palabras.
-        - 'evidencia_textual': DEBES iniciar indicando la sección exacta entre corchetes (Ej: "[Cláusula Segunda]"). Luego, máximo 15 palabras de cita usando [...]. Si falta, pon "No se encontró cláusula."
+        - 'evidencia_textual': Inicia con la sección entre corchetes (Ej: "[Cláusula Segunda]"). Luego máximo 15 palabras usando [...]. Si falta, pon "No se encontró cláusula."
         
-        Devuelve ÚNICAMENTE un JSON con esta estructura:
+        Devuelve ÚNICAMENTE un JSON con la estructura exacta:
         {{
           "informacion_basica": {{ "proveedor": "", "tipo_contrato": "", "duracion": "", "fecha": "" }},
           "cumplimiento_rgpd": [ {{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}} ],
@@ -86,8 +82,8 @@ async def auditar_contrato(peticion: PeticionContrato):
         respuesta = await modelo.generate_content_async(prompt_maestro)
         datos = json.loads(respuesta.text)
 
-        lista_estados_rgpd = [item["estado"] for item in datos.get("cumplimiento_rgpd", [])]
-        lista_estados_dora = [item["estado"] for item in datos.get("cumplimiento_dora", [])]
+        lista_estados_rgpd = [item.get("estado", "OK") for item in datos.get("cumplimiento_rgpd", [])]
+        lista_estados_dora = [item.get("estado", "OK") for item in datos.get("cumplimiento_dora", [])]
         todos_los_estados = lista_estados_rgpd + lista_estados_dora
 
         total_faltas = todos_los_estados.count("Falta")
@@ -111,7 +107,7 @@ async def auditar_contrato(peticion: PeticionContrato):
         return datos
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en el servidor: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
