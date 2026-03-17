@@ -5,6 +5,7 @@ import io
 import json
 import base64
 import os
+import asyncio
 import google.generativeai as genai
 
 # 1. Configuración de Gemini (De forma segura)
@@ -19,7 +20,7 @@ modelo = genai.GenerativeModel(
     generation_config={"response_mime_type": "application/json"}
 )
 
-app = FastAPI(title="Auditor Legal IA - MVP")
+app = FastAPI(title="Auditor Legal IA - Nivel 2 Multi-Agente")
 
 class PeticionContrato(BaseModel):
     nombre_archivo: str
@@ -36,59 +37,118 @@ async def auditar_contrato(peticion: PeticionContrato):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-# 5. El Prompt Maestro (Nivel 1: Trazabilidad)
-        prompt = f"""
-        Eres un auditor legal experto en normativas bancarias, específicamente DORA y RGPD.
-        Tu tarea es analizar el contrato proporcionado y generar un reporte de cumplimiento en formato JSON.
-
-        CRITERIOS RGPD A VALIDAR:
-        1. Encargado de tratamiento: Buscar mención a responsable, encargado y finalidad.
-        2. Acuerdo de tratamiento de datos (DPA): Buscar instrucciones documentadas, confidencialidad y subencargados.
-        3. Transferencias internacionales: Buscar transferencias fuera de la UE o cláusulas tipo.
-        4. Seguridad de la información: Buscar medidas técnicas, organizativas, cifrado, control de accesos.
-        5. Brechas de seguridad: Buscar obligación de notificación de incidentes en tiempo razonable.
-
-        CRITERIOS DORA A VALIDAR:
-        1. Descripción del servicio: Servicios TIC prestados, dependencias, alcance.
-        2. SLA: Niveles de servicio, disponibilidad, tiempos de recuperación.
-        3. Gestión de incidentes: Procedimiento de notificación, tiempos, responsabilidades.
-        4. Derechos de auditoría: Derecho a auditar al proveedor, inspeccionar procesos (Si no está, es Riesgo alto).
-        5. Subcontratación: Cláusula sobre subcontratistas TIC y autorización previa.
-        6. Estrategia de salida: Plan de salida, migración de servicios, devolución de datos.
-
-        REGLAS DE SALIDA ESTRICTAS Y TRAZABILIDAD:
-        1. Para cada control evaluado, es OBLIGATORIO extraer una "evidencia_textual".
-        2. La "evidencia_textual" debe ser una copia exacta y literal (entre comillas) del fragmento del contrato que justifica tu evaluación, indicando la página o número de cláusula si es posible.
-        3. Si el estado es "Falta", la "evidencia_textual" debe decir: "No se encontró ninguna cláusula en el contrato que cubra este requisito."
-
-        Devuelve ÚNICAMENTE un objeto JSON válido con la siguiente estructura exacta:
+        # ---------------------------------------------------------
+        # AGENTE 1: Especialista en Información Básica
+        # ---------------------------------------------------------
+        prompt_info = f"""
+        Extrae la información básica del contrato. 
+        Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
         {{
-          "informacion_basica": {{
-            "proveedor": "Nombre extraído o Desconocido",
-            "tipo_contrato": "Tipo extraído o Desconocido",
-            "duracion": "Duración extraída o No especificada",
-            "fecha": "Fecha extraída o No especificada"
-          }},
-          "cumplimiento_rgpd": [
-            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta de la cláusula del contrato"}}
-          ],
-          "cumplimiento_dora": [
-            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta de la cláusula del contrato"}}
-          ],
-          "resultado_final": {{
-            "nivel_cumplimiento": "Alto o Medio o Bajo",
-            "recomendacion": "Aprobable o Aprobable con cambios o Revisión legal obligatoria"
-          }}
+          "proveedor": "Nombre extraído o Desconocido",
+          "tipo_contrato": "Tipo extraído o Desconocido",
+          "duracion": "Duración extraída o No especificada",
+          "fecha": "Fecha extraída o No especificada"
         }}
-
         CONTRATO A ANALIZAR:
         {texto_completo}
         """
 
-        # ¡AQUÍ ESTÁ LA MAGIA ASÍNCRONA QUE EVITA QUE EL SERVIDOR SE APAGUE!
-        respuesta = await modelo.generate_content_async(prompt)
-        resultado_json = json.loads(respuesta.text)
-        return resultado_json
+        # ---------------------------------------------------------
+        # AGENTE 2: Especialista en RGPD
+        # ---------------------------------------------------------
+        prompt_rgpd = f"""
+        Eres un auditor legal experto en RGPD. Evalúa estos 5 controles:
+        1. Encargado de tratamiento
+        2. Acuerdo de tratamiento de datos (DPA)
+        3. Transferencias internacionales
+        4. Seguridad de la información
+        5. Brechas de seguridad
+
+        Regla estricta: Extrae una "evidencia_textual" (cita exacta del contrato). Si falta, pon: "No se encontró cláusula."
+        Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
+        {{
+          "cumplimiento_rgpd": [
+            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta"}}
+          ]
+        }}
+        CONTRATO A ANALIZAR:
+        {texto_completo}
+        """
+
+        # ---------------------------------------------------------
+        # AGENTE 3: Especialista en DORA
+        # ---------------------------------------------------------
+        prompt_dora = f"""
+        Eres un auditor legal experto en DORA. Evalúa estos 6 controles:
+        1. Descripción del servicio
+        2. SLA
+        3. Gestión de incidentes
+        4. Derechos de auditoría
+        5. Subcontratación
+        6. Estrategia de salida
+
+        Regla estricta: Extrae una "evidencia_textual" (cita exacta del contrato). Si falta, pon: "No se encontró cláusula."
+        Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
+        {{
+          "cumplimiento_dora": [
+            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta"}}
+          ]
+        }}
+        CONTRATO A ANALIZAR:
+        {texto_completo}
+        """
+
+        # ---------------------------------------------------------
+        # ORQUESTADOR: Lanzar los 3 Agentes al mismo tiempo (Paralelismo)
+        # ---------------------------------------------------------
+        tarea_info = modelo.generate_content_async(prompt_info)
+        tarea_rgpd = modelo.generate_content_async(prompt_rgpd)
+        tarea_dora = modelo.generate_content_async(prompt_dora)
+
+        # Esperamos a que los 3 expertos terminen su lectura
+        resp_info, resp_rgpd, resp_dora = await asyncio.gather(tarea_info, tarea_rgpd, tarea_dora)
+
+        # Convertimos las respuestas a diccionarios
+        datos_info = json.loads(resp_info.text)
+        datos_rgpd = json.loads(resp_rgpd.text)
+        datos_dora = json.loads(resp_dora.text)
+
+        # ---------------------------------------------------------
+        # AGENTE 4: El Juez Supremo (Algoritmo Determinista)
+        # ---------------------------------------------------------
+        # Recopilamos todos los estados ("OK", "Falta", "Riesgo") de ambos reportes
+        lista_estados_rgpd = [item["estado"] for item in datos_rgpd.get("cumplimiento_rgpd", [])]
+        lista_estados_dora = [item["estado"] for item in datos_dora.get("cumplimiento_dora", [])]
+        todos_los_estados = lista_estados_rgpd + lista_estados_dora
+
+        # Contamos matemáticamente los errores (La IA ya no inventa el resultado final)
+        total_faltas = todos_los_estados.count("Falta")
+        total_riesgos = todos_los_estados.count("Riesgo")
+
+        if total_faltas >= 2 or total_riesgos >= 3:
+            nivel = "Bajo"
+            recomendacion = "Revisión legal obligatoria"
+        elif total_faltas > 0 or total_riesgos > 0:
+            nivel = "Medio"
+            recomendacion = "Aprobable con cambios"
+        else:
+            nivel = "Alto"
+            recomendacion = "Aprobable"
+
+        # ---------------------------------------------------------
+        # ENSAMBLAJE FINAL: Empaquetar todo para Power Automate
+        # ---------------------------------------------------------
+        json_final = {
+            "informacion_basica": datos_info,
+            "cumplimiento_rgpd": datos_rgpd.get("cumplimiento_rgpd", []),
+            "cumplimiento_dora": datos_dora.get("cumplimiento_dora", []),
+            "resultado_final": {
+                "nivel_cumplimiento": nivel,
+                "recomendacion": recomendacion
+            }
+        }
+
+        return json_final
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en el servidor: {str(e)}")
