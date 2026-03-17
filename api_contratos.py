@@ -36,6 +36,7 @@ async def auditar_contrato(peticion: PeticionContrato):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
+# 5. El Prompt Maestro (Nivel 1: Trazabilidad)
         prompt = f"""
         Eres un auditor legal experto en normativas bancarias, específicamente DORA y RGPD.
         Tu tarea es analizar el contrato proporcionado y generar un reporte de cumplimiento en formato JSON.
@@ -55,7 +56,11 @@ async def auditar_contrato(peticion: PeticionContrato):
         5. Subcontratación: Cláusula sobre subcontratistas TIC y autorización previa.
         6. Estrategia de salida: Plan de salida, migración de servicios, devolución de datos.
 
-        REGLAS DE SALIDA ESTRICTAS:
+        REGLAS DE SALIDA ESTRICTAS Y TRAZABILIDAD:
+        1. Para cada control evaluado, es OBLIGATORIO extraer una "evidencia_textual".
+        2. La "evidencia_textual" debe ser una copia exacta y literal (entre comillas) del fragmento del contrato que justifica tu evaluación, indicando la página o número de cláusula si es posible.
+        3. Si el estado es "Falta", la "evidencia_textual" debe decir: "No se encontró ninguna cláusula en el contrato que cubra este requisito."
+
         Devuelve ÚNICAMENTE un objeto JSON válido con la siguiente estructura exacta:
         {{
           "informacion_basica": {{
@@ -65,10 +70,10 @@ async def auditar_contrato(peticion: PeticionContrato):
             "fecha": "Fecha extraída o No especificada"
           }},
           "cumplimiento_rgpd": [
-            {{"control": "Nombre del control", "estado": "OK o Falta o Riesgo o No detectado", "observacion": "Cláusula X o breve motivo"}}
+            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta de la cláusula del contrato"}}
           ],
           "cumplimiento_dora": [
-            {{"control": "Nombre del control", "estado": "OK o Falta o Riesgo o No detectado", "observacion": "Cláusula X o breve motivo"}}
+            {{"control": "Nombre", "estado": "OK o Falta o Riesgo", "observacion": "Breve motivo", "evidencia_textual": "Cita exacta de la cláusula del contrato"}}
           ],
           "resultado_final": {{
             "nivel_cumplimiento": "Alto o Medio o Bajo",
