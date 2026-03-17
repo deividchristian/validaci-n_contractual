@@ -78,7 +78,7 @@ async def auditar_contrato(peticion: PeticionContrato):
         
         REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
         - 'observacion': Máximo 12 palabras. Ve directo al grano.
-        - 'evidencia_textual': Máximo 15 palabras. Usa [...] para acortar citas largas. Nunca copies párrafos enteros. Si falta, pon "No se encontró cláusula."
+        - 'evidencia_textual': DEBES iniciar obligatoriamente indicando la sección o cláusula exacta entre corchetes (Ej: "[Cláusula Segunda]" o "[Anexo IV]"). Luego, escribe máximo 15 palabras de cita usando [...] para acortar. Si falta, pon "No se encontró cláusula."
 
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_rgpd": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
@@ -104,7 +104,7 @@ async def auditar_contrato(peticion: PeticionContrato):
         
         REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
         - 'observacion': Máximo 12 palabras. Ve directo al grano.
-        - 'evidencia_textual': Máximo 15 palabras. Usa [...] para acortar citas largas. Nunca copies párrafos enteros. Si falta, pon "No se encontró cláusula."
+        - 'evidencia_textual': DEBES iniciar obligatoriamente indicando la sección o cláusula exacta entre corchetes (Ej: "[Cláusula Segunda]" o "[Anexo IV]"). Luego, escribe máximo 15 palabras de cita usando [...] para acortar. Si falta, pon "No se encontró cláusula."
 
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_dora": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
