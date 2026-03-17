@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import docx
@@ -19,7 +20,7 @@ modelo = genai.GenerativeModel(
     generation_config={"response_mime_type": "application/json"}
 )
 
-app = FastAPI(title="Auditor Legal IA")
+app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
 def leer_pdf_completo(ruta_archivo):
     texto_extraido = ""
@@ -29,9 +30,10 @@ def leer_pdf_completo(ruta_archivo):
             for pagina in lector.pages:
                 texto_extraido += pagina.extract_text() + "\n"
     except Exception:
-        texto_extraido = "Error al leer el documento."
+        texto_extraido = "Error al leer el documento legal."
     return texto_extraido
 
+# Cargamos las leyes reales desde los PDFs
 LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
 LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
@@ -41,37 +43,44 @@ class PeticionContrato(BaseModel):
 
 @app.post("/auditar-contrato")
 async def auditar_contrato(peticion: PeticionContrato):
-    if not peticion.nombre_archivo.endswith('.docx'):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos .docx.")
-    
     try:
-        contenido_binario = base64.b64decode(peticion.archivo_base64)
+        # FILTRO DE BASURA: Limpiar lo que envía Power Automate
+        texto_b64 = peticion.archivo_base64
+        if "contentBytes" in texto_b64:
+            try:
+                obj = json.loads(texto_b64)
+                texto_b64 = obj.get("contentBytes", texto_b64)
+            except:
+                pass
+        
+        # Decodificar y leer Word
+        contenido_binario = base64.b64decode(texto_b64)
         documento_io = io.BytesIO(contenido_binario)
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
         prompt_maestro = f"""
-        Eres un auditor legal. Evalúa el contrato contra el RGPD y DORA.
+        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del RGPD y DORA.
         
-        [LEY RGPD]
+        [LEY EUROPEA RGPD]
         {LEY_RGPD_COMPLETA}
         
-        [LEY DORA]
+        [NORMATIVA BANCARIA DORA]
         {LEY_DORA_COMPLETA}
         
-        [CONTRATO]
+        [CONTRATO A ANALIZAR]
         {texto_completo}
         
-        TAREAS:
-        1. Extrae: proveedor, tipo_contrato, duracion, fecha.
+        TAREAS OBLIGATORIAS:
+        1. Extrae la información básica: proveedor, tipo_contrato, duracion, fecha.
         2. Evalúa 5 controles RGPD: Encargado de tratamiento y Devolución/Destrucción, DPA, Transferencias internacionales, Seguridad y Brechas, Asistencia en Derechos ARCO y Auditorías.
         3. Evalúa 6 controles DORA: Descripción de funciones y ubicación, SLA y Gestión de incidentes, Derechos de acceso y auditoría sin restricciones, Subcontratación, Estrategias de salida, Medidas de seguridad TIC.
         
-        REGLAS:
+        REGLAS DE FORMATO ESTRICTAS:
         - 'observacion': Máximo 12 palabras.
-        - 'evidencia_textual': Inicia con la sección entre corchetes (Ej: "[Cláusula Segunda]"). Luego máximo 15 palabras usando [...]. Si falta, pon "No se encontró cláusula."
+        - 'evidencia_textual': DEBES iniciar indicando la sección exacta entre corchetes (Ej: "[Cláusula Segunda]"). Luego, máximo 15 palabras de cita usando [...]. Si falta, pon "No se encontró cláusula."
         
-        Devuelve ÚNICAMENTE un JSON con la estructura exacta:
+        Devuelve ÚNICAMENTE un JSON con esta estructura:
         {{
           "informacion_basica": {{ "proveedor": "", "tipo_contrato": "", "duracion": "", "fecha": "" }},
           "cumplimiento_rgpd": [ {{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}} ],

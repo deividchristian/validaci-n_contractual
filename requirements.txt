@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 python-docx
-pydantic
 google-generativeai
+pydantic
+python-multipart
 PyPDF2
