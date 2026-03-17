@@ -5,7 +5,6 @@ import io
 import json
 import base64
 import os
-import asyncio
 import PyPDF2
 import google.generativeai as genai
 
@@ -51,77 +50,44 @@ async def auditar_contrato(peticion: PeticionContrato):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-        prompt_info = f"""
-        Extrae la información básica del contrato. 
-        Devuelve ÚNICAMENTE un JSON con: proveedor, tipo_contrato, duracion, fecha.
-        CONTRATO: {texto_completo}
-        """
-
-        prompt_rgpd = f"""
-        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD).
+        prompt_maestro = f"""
+        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
         
-        [LEY EUROPEA DE REFERENCIA - TEXTO COMPLETO]
+        [LEY EUROPEA DE REFERENCIA RGPD]
         {LEY_RGPD_COMPLETA}
         
-        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
-        Ejemplo 1: Si el contrato remite a un "Anexo IV" para el tratamiento de datos pero el anexo no está en el texto.
-        Evaluación -> estado: "Riesgo", observacion: "Falta Anexo IV para validar DPA."
-        Ejemplo 2: Si no menciona nada sobre transferencias fuera de Europa.
-        Evaluación -> estado: "Falta", observacion: "Omisión total sobre transferencias internacionales."
-
-        Evalúa EXHAUSTIVAMENTE estos 5 controles:
-        1. Encargado de tratamiento y Devolución/Destrucción de datos
-        2. Acuerdo de tratamiento de datos (DPA)
-        3. Transferencias internacionales (Capítulo V)
-        4. Seguridad de la información y Notificación de Brechas
-        5. Asistencia en Derechos ARCO y Auditorías
-        
-        REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
-        - 'observacion': Máximo 12 palabras. Ve directo al grano.
-        - 'evidencia_textual': DEBES iniciar obligatoriamente indicando la sección o cláusula exacta entre corchetes (Ej: "[Cláusula Segunda]" o "[Anexo IV]"). Luego, escribe máximo 15 palabras de cita usando [...] para acortar. Si falta, pon "No se encontró cláusula."
-
-        Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_rgpd": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
-        CONTRATO: {texto_completo}
-        """
-
-        prompt_dora = f"""
-        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del Reglamento DORA.
-        
-        [NORMATIVA BANCARIA DORA - TEXTO COMPLETO]
+        [NORMATIVA BANCARIA DORA]
         {LEY_DORA_COMPLETA}
         
-        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
-        Ejemplo 1: Si el contrato exige "previo aviso" para auditar.
-        Evaluación -> estado: "Riesgo", observacion: "Limita el acceso sin restricciones exigido."
+        [CONTRATO A ANALIZAR]
+        {texto_completo}
         
-        Evalúa EXHAUSTIVAMENTE estos 6 controles:
-        1. Descripción de funciones, ubicación de servicio y datos
-        2. SLA y Gestión de incidentes TIC
-        3. Derechos de acceso y auditoría sin restricciones (locales físicos)
-        4. Subcontratación en la cadena de proveedores
-        5. Estrategias de salida
-        6. Medidas de seguridad TIC
+        TAREAS OBLIGATORIAS:
+        1. Extrae la información básica: proveedor, tipo_contrato, duracion, fecha.
+        2. Evalúa 5 controles RGPD: Encargado de tratamiento y Devolución/Destrucción, DPA, Transferencias internacionales, Seguridad y Brechas, Asistencia en Derechos ARCO y Auditorías.
+        3. Evalúa 6 controles DORA: Descripción de funciones y ubicación, SLA y Gestión de incidentes, Derechos de acceso y auditoría sin restricciones, Subcontratación, Estrategias de salida, Medidas de seguridad TIC.
         
-        REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
-        - 'observacion': Máximo 12 palabras. Ve directo al grano.
-        - 'evidencia_textual': DEBES iniciar obligatoriamente indicando la sección o cláusula exacta entre corchetes (Ej: "[Cláusula Segunda]" o "[Anexo IV]"). Luego, escribe máximo 15 palabras de cita usando [...] para acortar. Si falta, pon "No se encontró cláusula."
-
-        Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_dora": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
-        CONTRATO: {texto_completo}
+        [EJEMPLOS DE CALIBRACIÓN]
+        - Si el contrato remite a un "Anexo IV" para datos pero no está adjunto -> estado: "Riesgo", observacion: "Falta Anexo IV para validar DPA."
+        - Si exige "previo aviso" para auditar -> estado: "Riesgo", observacion: "Limita el acceso sin restricciones exigido."
+        
+        REGLAS DE FORMATO ESTRICTAS:
+        - 'observacion': Máximo 12 palabras.
+        - 'evidencia_textual': DEBES iniciar indicando la sección exacta entre corchetes (Ej: "[Cláusula Segunda]"). Luego, máximo 15 palabras de cita usando [...]. Si falta, pon "No se encontró cláusula."
+        
+        Devuelve ÚNICAMENTE un JSON con esta estructura:
+        {{
+          "informacion_basica": {{ "proveedor": "", "tipo_contrato": "", "duracion": "", "fecha": "" }},
+          "cumplimiento_rgpd": [ {{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}} ],
+          "cumplimiento_dora": [ {{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}} ]
+        }}
         """
 
-        tarea_info = modelo.generate_content_async(prompt_info)
-        tarea_rgpd = modelo.generate_content_async(prompt_rgpd)
-        tarea_dora = modelo.generate_content_async(prompt_dora)
+        respuesta = await modelo.generate_content_async(prompt_maestro)
+        datos = json.loads(respuesta.text)
 
-        resp_info, resp_rgpd, resp_dora = await asyncio.gather(tarea_info, tarea_rgpd, tarea_dora)
-
-        datos_info = json.loads(resp_info.text)
-        datos_rgpd = json.loads(resp_rgpd.text)
-        datos_dora = json.loads(resp_dora.text)
-
-        lista_estados_rgpd = [item["estado"] for item in datos_rgpd.get("cumplimiento_rgpd", [])]
-        lista_estados_dora = [item["estado"] for item in datos_dora.get("cumplimiento_dora", [])]
+        lista_estados_rgpd = [item["estado"] for item in datos.get("cumplimiento_rgpd", [])]
+        lista_estados_dora = [item["estado"] for item in datos.get("cumplimiento_dora", [])]
         todos_los_estados = lista_estados_rgpd + lista_estados_dora
 
         total_faltas = todos_los_estados.count("Falta")
@@ -137,17 +103,12 @@ async def auditar_contrato(peticion: PeticionContrato):
             nivel = "Alto"
             recomendacion = "Aprobable"
 
-        json_final = {
-            "informacion_basica": datos_info,
-            "cumplimiento_rgpd": datos_rgpd.get("cumplimiento_rgpd", []),
-            "cumplimiento_dora": datos_dora.get("cumplimiento_dora", []),
-            "resultado_final": {
-                "nivel_cumplimiento": nivel,
-                "recomendacion": recomendacion
-            }
+        datos["resultado_final"] = {
+            "nivel_cumplimiento": nivel,
+            "recomendacion": recomendacion
         }
 
-        return json_final
+        return datos
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en el servidor: {str(e)}")
