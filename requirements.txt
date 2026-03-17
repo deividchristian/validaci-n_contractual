@@ -4,3 +4,4 @@ python-docx
 google-generativeai
 pydantic
 python-multipart
+PyPDF2
