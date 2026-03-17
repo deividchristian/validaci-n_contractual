@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import docx
@@ -33,7 +32,6 @@ def leer_pdf_completo(ruta_archivo):
         texto_extraido = "Error al leer el documento legal."
     return texto_extraido
 
-# Cargamos las leyes reales desde los PDFs
 LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
 LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
@@ -44,7 +42,6 @@ class PeticionContrato(BaseModel):
 @app.post("/auditar-contrato")
 async def auditar_contrato(peticion: PeticionContrato):
     try:
-        # FILTRO DE BASURA: Limpiar lo que envía Power Automate
         texto_b64 = peticion.archivo_base64
         if "contentBytes" in texto_b64:
             try:
@@ -53,16 +50,15 @@ async def auditar_contrato(peticion: PeticionContrato):
             except:
                 pass
         
-        # Decodificar y leer Word
         contenido_binario = base64.b64decode(texto_b64)
         documento_io = io.BytesIO(contenido_binario)
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
         prompt_maestro = f"""
-        Eres un auditor legal experto. Evalúa el contrato contra el texto íntegro del RGPD y DORA.
+        Eres un auditor legal experto y MUY ESTRICTO. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
         
-        [LEY EUROPEA RGPD]
+        [LEY EUROPEA DE REFERENCIA RGPD]
         {LEY_RGPD_COMPLETA}
         
         [NORMATIVA BANCARIA DORA]
@@ -73,13 +69,35 @@ async def auditar_contrato(peticion: PeticionContrato):
         
         TAREAS OBLIGATORIAS:
         1. Extrae la información básica: proveedor, tipo_contrato, duracion, fecha.
-        2. Evalúa 5 controles RGPD: Encargado de tratamiento y Devolución/Destrucción, DPA, Transferencias internacionales, Seguridad y Brechas, Asistencia en Derechos ARCO y Auditorías.
-        3. Evalúa 6 controles DORA: Descripción de funciones y ubicación, SLA y Gestión de incidentes, Derechos de acceso y auditoría sin restricciones, Subcontratación, Estrategias de salida, Medidas de seguridad TIC.
+        2. Evalúa EXHAUSTIVAMENTE 5 controles RGPD:
+           - Encargado de tratamiento y Devolución/Destrucción de datos
+           - Acuerdo de tratamiento de datos (DPA)
+           - Transferencias internacionales (Capítulo V)
+           - Seguridad de la información y Notificación de Brechas
+           - Asistencia en Derechos ARCO y Auditorías
+        3. Evalúa EXHAUSTIVAMENTE 6 controles DORA:
+           - Descripción de funciones, ubicación de servicio y datos
+           - SLA y Gestión de incidentes TIC
+           - Derechos de acceso y auditoría sin restricciones (locales físicos)
+           - Subcontratación en la cadena de proveedores
+           - Estrategias de salida
+           - Medidas de seguridad TIC
+        
+        [EJEMPLOS DE CALIBRACIÓN DE RIESGO - MUY IMPORTANTE]
+        Ejemplo 1: Si el contrato remite a un "Anexo IV" o "Documento aparte" para el tratamiento de datos pero el anexo no está en el texto principal.
+        -> estado: "Falta", observacion: "Falta Anexo IV para validar DPA."
+        Ejemplo 2: Si no menciona nada sobre transferencias fuera de Europa.
+        -> estado: "Falta", observacion: "Omisión total sobre transferencias internacionales."
+        Ejemplo 3: Si exige "previo aviso" para auditar.
+        -> estado: "Riesgo", observacion: "Limita el acceso sin restricciones exigido por DORA."
+        Ejemplo 4: Si habla de destrucción de "Información Confidencial" pero no detalla explícitamente "datos personales" según RGPD.
+        -> estado: "Riesgo", observacion: "No especifica destrucción de datos personales."
         
         REGLAS DE FORMATO ESTRICTAS:
-        - 'observacion': Máximo 12 palabras.
-        - 'evidencia_textual': DEBES iniciar indicando la sección exacta entre corchetes (Ej: "[Cláusula Segunda]"). Luego, máximo 15 palabras de cita usando [...]. Si falta, pon "No se encontró cláusula."
-        
+        - 'estado': DEBE SER EXACTAMENTE UNA DE ESTAS 3 PALABRAS: "OK", "Falta", o "Riesgo". (No uses "Cumple" ni "Parcialmente cumple").
+        - 'observacion': Máximo 12 palabras. Ve directo al grano.
+        - 'evidencia_textual': DEBES iniciar obligatoriamente indicando la sección o cláusula exacta entre corchetes (Ej: "[Cláusula Segunda]" o "[Anexo IV]"). Luego, escribe máximo 15 palabras de cita usando [...] para acortar. Si falta, pon "No se encontró cláusula."
+
         Devuelve ÚNICAMENTE un JSON con esta estructura:
         {{
           "informacion_basica": {{ "proveedor": "", "tipo_contrato": "", "duracion": "", "fecha": "" }},
