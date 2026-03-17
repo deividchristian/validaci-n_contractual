@@ -20,7 +20,7 @@ modelo = genai.GenerativeModel(
     generation_config={"response_mime_type": "application/json"}
 )
 
-app = FastAPI(title="Auditor Legal IA - RAG Documental Real")
+app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
 def leer_pdf_completo(ruta_archivo):
     texto_extraido = ""
@@ -63,14 +63,23 @@ async def auditar_contrato(peticion: PeticionContrato):
         [LEY EUROPEA DE REFERENCIA - TEXTO COMPLETO]
         {LEY_RGPD_COMPLETA}
         
-        Evalúa EXHAUSTIVAMENTE estos 5 controles contra el texto legal:
-        1. Encargado de tratamiento y Devolución/Destrucción de datos al finalizar el servicio
-        2. Acuerdo de tratamiento de datos (DPA) detallado
+        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
+        Ejemplo 1: Si el contrato remite a un "Anexo IV" para el tratamiento de datos pero el anexo no está en el texto.
+        Evaluación -> estado: "Riesgo", observacion: "Falta Anexo IV para validar DPA."
+        Ejemplo 2: Si no menciona nada sobre transferencias fuera de Europa.
+        Evaluación -> estado: "Falta", observacion: "Omisión total sobre transferencias internacionales."
+
+        Evalúa EXHAUSTIVAMENTE estos 5 controles:
+        1. Encargado de tratamiento y Devolución/Destrucción de datos
+        2. Acuerdo de tratamiento de datos (DPA)
         3. Transferencias internacionales (Capítulo V)
         4. Seguridad de la información y Notificación de Brechas
-        5. Asistencia al Responsable en Derechos ARCO y sometimiento a Auditorías
+        5. Asistencia en Derechos ARCO y Auditorías
         
-        Regla: Extrae "evidencia_textual". Si el contrato omite cualquier exigencia del RGPD, estado es "Falta" o "Riesgo".
+        REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
+        - 'observacion': Máximo 12 palabras. Ve directo al grano.
+        - 'evidencia_textual': Máximo 15 palabras. Usa [...] para acortar citas largas. Nunca copies párrafos enteros. Si falta, pon "No se encontró cláusula."
+
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_rgpd": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
         """
@@ -81,15 +90,22 @@ async def auditar_contrato(peticion: PeticionContrato):
         [NORMATIVA BANCARIA DORA - TEXTO COMPLETO]
         {LEY_DORA_COMPLETA}
         
-        Evalúa EXHAUSTIVAMENTE estos 6 controles contra el texto legal:
-        1. Descripción de funciones, ubicación de prestación del servicio y ubicación de los datos
-        2. SLA y Gestión de incidentes TIC
-        3. Derechos de acceso y auditoría sin restricciones (incluyendo locales físicos)
-        4. Subcontratación y aplicación a la cadena de proveedores
-        5. Estrategias de salida e interrupciones imprevistas
-        6. Medidas de seguridad e integridad TIC
+        [EJEMPLOS DE CALIBRACIÓN DE LA EMPRESA]
+        Ejemplo 1: Si el contrato exige "previo aviso" para auditar.
+        Evaluación -> estado: "Riesgo", observacion: "Limita el acceso sin restricciones exigido."
         
-        Regla: Extrae "evidencia_textual". Si el contrato omite cualquier exigencia de DORA, estado es "Falta" o "Riesgo".
+        Evalúa EXHAUSTIVAMENTE estos 6 controles:
+        1. Descripción de funciones, ubicación de servicio y datos
+        2. SLA y Gestión de incidentes TIC
+        3. Derechos de acceso y auditoría sin restricciones (locales físicos)
+        4. Subcontratación en la cadena de proveedores
+        5. Estrategias de salida
+        6. Medidas de seguridad TIC
+        
+        REGLAS DE FORMATO ESTRICTAS (¡IMPORTANTE!):
+        - 'observacion': Máximo 12 palabras. Ve directo al grano.
+        - 'evidencia_textual': Máximo 15 palabras. Usa [...] para acortar citas largas. Nunca copies párrafos enteros. Si falta, pon "No se encontró cláusula."
+
         Devuelve ÚNICAMENTE un JSON con: {{"cumplimiento_dora": [{{"control": "", "estado": "", "observacion": "", "evidencia_textual": ""}}]}}
         CONTRATO: {texto_completo}
         """
