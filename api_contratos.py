@@ -5,7 +5,6 @@ import io
 import json
 import base64
 import os
-import asyncio
 import PyPDF2
 import google.generativeai as genai
 
@@ -110,11 +109,9 @@ async def auditar_contrato(peticion: PeticionContrato):
         CONTRATO: {texto_completo}
         """
 
-        tarea_info = modelo.generate_content_async(prompt_info)
-        tarea_rgpd = modelo.generate_content_async(prompt_rgpd)
-        tarea_dora = modelo.generate_content_async(prompt_dora)
-
-        resp_info, resp_rgpd, resp_dora = await asyncio.gather(tarea_info, tarea_rgpd, tarea_dora)
+        resp_info = await modelo.generate_content_async(prompt_info)
+        resp_rgpd = await modelo.generate_content_async(prompt_rgpd)
+        resp_dora = await modelo.generate_content_async(prompt_dora)
 
         datos_info = json.loads(resp_info.text)
         datos_rgpd = json.loads(resp_rgpd.text)
