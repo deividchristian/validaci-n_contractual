@@ -35,10 +35,16 @@ def leer_pdf_completo(ruta_archivo):
 LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
 LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
+# --- MODELOS DE DATOS ---
 class PeticionContrato(BaseModel):
     nombre_archivo: str
     archivo_base64: str
 
+class PeticionPregunta(BaseModel):
+    archivo_base64: str
+    pregunta: str
+
+# --- ENDPOINT 1: LA AUDITORÍA ESTRICTA (YA FUNCIONA) ---
 @app.post("/auditar-contrato")
 async def auditar_contrato(peticion: PeticionContrato):
     try:
@@ -135,6 +141,55 @@ async def auditar_contrato(peticion: PeticionContrato):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+
+# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL ---
+@app.post("/preguntar-contrato")
+async def preguntar_contrato(peticion: PeticionPregunta):
+    try:
+        # 1. Filtramos la basura de Power Automate igual que arriba
+        texto_b64 = peticion.archivo_base64
+        if "contentBytes" in texto_b64:
+            try:
+                obj = json.loads(texto_b64)
+                texto_b64 = obj.get("contentBytes", texto_b64)
+            except:
+                pass
+        
+        # 2. Leemos el Word
+        contenido_binario = base64.b64decode(texto_b64)
+        documento_io = io.BytesIO(contenido_binario)
+        doc = docx.Document(documento_io)
+        texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
+        
+        # 3. Prompt Estricto Anti-Alucinaciones
+        prompt_qa = f"""
+        Eres un asistente legal experto. Tu única tarea es responder a la pregunta del usuario basándote EXCLUSIVAMENTE en el texto del contrato proporcionado a continuación.
+        
+        REGLAS ESTRICTAS:
+        1. NO uses información de internet ni conocimientos externos.
+        2. Si la respuesta no está en el contrato, responde exactamente: "La información solicitada no se encuentra detallada en este contrato."
+        3. Sé directo, profesional y resume la respuesta si es muy larga.
+        
+        [CONTRATO]
+        {texto_completo}
+        
+        [PREGUNTA DEL USUARIO]
+        {peticion.pregunta}
+        
+        Devuelve ÚNICAMENTE un JSON con esta estructura:
+        {{
+          "respuesta": "tu respuesta aquí"
+        }}
+        """
+        
+        # Generar respuesta
+        respuesta = await modelo.generate_content_async(prompt_qa)
+        datos = json.loads(respuesta.text)
+        return datos
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno QA: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
