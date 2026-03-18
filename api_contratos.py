@@ -162,7 +162,7 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-        # 3. Prompt Estricto Anti-Alucinaciones
+        # 3. Prompt Estricto Anti-Alucinaciones + Regla Anti-Markdown
         prompt_qa = f"""
         Eres un asistente legal experto. Tu única tarea es responder a la pregunta del usuario basándote EXCLUSIVAMENTE en el texto del contrato proporcionado a continuación.
         
@@ -170,6 +170,7 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         1. NO uses información de internet ni conocimientos externos.
         2. Si la respuesta no está en el contrato, responde exactamente: "La información solicitada no se encuentra detallada en este contrato."
         3. Sé directo, profesional y resume la respuesta si es muy larga.
+        4. REGLA DE FORMATO OBLIGATORIA: Responde SIEMPRE en texto plano, en un solo párrafo fluido. ESTÁ ESTRICTAMENTE PROHIBIDO usar asteriscos (*), negritas, viñetas, guiones al inicio de frase o saltos de línea.
         
         [CONTRATO]
         {texto_completo}
@@ -179,17 +180,32 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         
         Devuelve ÚNICAMENTE un JSON con esta estructura:
         {{
-          "respuesta": "tu respuesta aquí"
+          "respuesta": "tu respuesta limpia y en texto plano aquí"
         }}
         """
         
         # Generar respuesta
         respuesta = await modelo.generate_content_async(prompt_qa)
         datos = json.loads(respuesta.text)
+        
+        # 4. Filtro Limpiador (La barredora final)
+        # Extraemos la respuesta cruda para quitarle cualquier carácter que pueda romper a Copilot Studio
+        respuesta_cruda = datos.get("respuesta", "")
+        texto_limpio = respuesta_cruda.replace("*", "").replace("\n", " ").replace("\"", "'").replace("- ", "")
+        
+        # Eliminamos espacios dobles que hayan quedado al quitar los saltos de línea
+        texto_limpio = " ".join(texto_limpio.split()) 
+        
+        # Actualizamos el JSON con el texto totalmente purificado
+        datos["respuesta"] = texto_limpio
+        
         return datos
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error interno QA: {str(e)}")
+        # MEJORA DE ESTABILIDAD: Si ocurre un error de lectura o procesamiento,
+        # en lugar de generar un Error 500 (que colapsa Copilot con un SystemError),
+        # devolvemos un JSON limpio con la explicación del error.
+        return {"respuesta": f"Hubo un error interno al procesar tu pregunta. Por favor, inténtalo de nuevo. Detalle: {str(e)}"}
 
 if __name__ == "__main__":
     import uvicorn
