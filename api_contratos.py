@@ -124,7 +124,7 @@ async def auditar_contrato(peticion: PeticionContrato):
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
-# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL (BLINDADO Y ACELERADO) ---
+# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL (INFALIBLE) ---
 @app.post("/preguntar-contrato")
 async def preguntar_contrato(peticion: PeticionPregunta):
     try:
@@ -143,54 +143,38 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-        # 3. Prompt Estricto
+        # 3. Prompt Estricto (¡SIN PEDIR JSON!)
         prompt_qa = f"""
-        Eres un asistente legal experto. Responde a la pregunta basándote EXCLUSIVAMENTE en el contrato proporcionado.
+        Eres un asistente legal experto. Responde a la pregunta basándote EXCLUSIVAMENTE en el contrato.
         
-        REGLAS ESTRICTAS:
-        1. NO uses información de internet ni conocimientos externos.
-        2. Si la respuesta no está en el contrato, responde exactamente: "La información solicitada no se encuentra detallada en este contrato."
-        3. MUY IMPORTANTE: Sé directo y súper conciso. 
-        4. REGLA DE FORMATO: Responde en texto plano. PROHIBIDO usar asteriscos (*), negritas, viñetas, guiones al inicio o saltos de línea.
+        REGLAS:
+        1. NO uses información de internet.
+        2. Si no está en el contrato, responde: "La información solicitada no se encuentra detallada en este contrato."
+        3. Sé súper conciso. NUNCA superes las 150 palabras.
         
         [CONTRATO]
         {texto_completo}
         
         [PREGUNTA DEL USUARIO]
         {peticion.pregunta}
-        
-        Devuelve ÚNICAMENTE un JSON con esta estructura:
-        {{
-          "respuesta": "tu respuesta limpia aquí"
-        }}
         """
         
-        # 4. EL GOBERNADOR DE VELOCIDAD: Forzamos a Gemini a no pasarse de 250 tokens para evitar timeouts
-        respuesta = await modelo.generate_content_async(
-            prompt_qa,
-            generation_config={
-                "max_output_tokens": 250, 
-                "response_mime_type": "application/json"
-            }
-        )
-        datos = json.loads(respuesta.text)
+        # 4. Le pedimos texto normal a Gemini (Le quitamos la obligación de hacer JSON)
+        respuesta = await modelo.generate_content_async(prompt_qa)
+        respuesta_cruda = respuesta.text
         
-        # 5. EL BLINDAJE FINAL (Regex + Limpieza)
-        respuesta_cruda = datos.get("respuesta", "")
-        
-        # Destruimos símbolos raros, permitiendo solo texto normal y puntuación
+        # 5. Limpiamos cualquier símbolo raro que haya puesto
         texto_limpio = re.sub(r'[^\w\s.,;:!?()\'áéíóúÁÉÍÓÚñÑüÜ-]', '', respuesta_cruda)
-        
-        # Destruimos saltos de línea invisibles
         texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
         texto_limpio = " ".join(texto_limpio.split()) 
         
-        datos["respuesta"] = texto_limpio
+        # 6. NOSOTROS ARMAMOS EL JSON MANUALMENTE (Esto nunca fallará)
+        datos = {"respuesta": texto_limpio}
+        
         return datos
 
     except Exception as e:
-        # Si algo falla en el código, mandamos un mensaje de error pacífico para que Copilot no colapse
-        return {"respuesta": f"Hubo un error de procesamiento. Detalle: {str(e)[:100]}"}
+        return {"respuesta": f"Error de procesamiento: {str(e)[:100]}"}
 
 if __name__ == "__main__":
     import uvicorn
