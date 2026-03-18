@@ -169,8 +169,7 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         REGLAS ESTRICTAS:
         1. NO uses información de internet ni conocimientos externos.
         2. Si la respuesta no está en el contrato, responde exactamente: "La información solicitada no se encuentra detallada en este contrato."
-        3. Sé directo, profesional y resume la respuesta si es muy larga.
-        4. REGLA DE FORMATO OBLIGATORIA: Responde SIEMPRE en texto plano, en un solo párrafo fluido. ESTÁ ESTRICTAMENTE PROHIBIDO usar asteriscos (*), negritas, viñetas, guiones al inicio de frase o saltos de línea.
+        3. LÍMITE DE EXTENSIÓN (CRÍTICO): Tu respuesta NUNCA debe superar las 150 palabras. Si el usuario te pide un resumen general, extrae solo la esencia en un párrafo corto y directo.
         
         [CONTRATO]
         {texto_completo}
