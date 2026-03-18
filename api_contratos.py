@@ -6,8 +6,10 @@ import json
 import base64
 import os
 import PyPDF2
+import re
 import google.generativeai as genai
 
+# --- CONFIGURACIÓN DE IA ---
 llave_secreta = os.getenv("GEMINI_API_KEY")
 
 if not llave_secreta:
@@ -21,17 +23,25 @@ modelo = genai.GenerativeModel(
 
 app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
-def leer_pdf_completo(ruta_archivo):
+# --- CARGA DE LEYES ---
+def leer_pdf_completo(ruta_archivo: str) -> str:
     texto_extraido = ""
+    if not os.path.exists(ruta_archivo):
+        # Es mejor que el programa falle rápido si faltan las leyes base
+        raise FileNotFoundError(f"Falta el archivo indispensable: {ruta_archivo}")
+        
     try:
         with open(ruta_archivo, "rb") as archivo:
             lector = PyPDF2.PdfReader(archivo)
             for pagina in lector.pages:
                 texto_extraido += pagina.extract_text() + "\n"
-    except Exception:
-        texto_extraido = "Error al leer el documento legal."
+    except Exception as e:
+        raise RuntimeError(f"Error crítico al leer {ruta_archivo}: {str(e)}")
+        
     return texto_extraido
 
+# Nota: Cargar leyes enteras en cada prompt consume muchos tokens. 
+# Si usas Gemini 1.5/2.5 Flash soporta hasta 1M de tokens, pero impacta la latencia.
 LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
 LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
@@ -44,22 +54,30 @@ class PeticionPregunta(BaseModel):
     archivo_base64: str
     pregunta: str
 
-# --- ENDPOINT 1: LA AUDITORÍA ESTRICTA (YA FUNCIONA) ---
-@app.post("/auditar-contrato")
-async def auditar_contrato(peticion: PeticionContrato):
+# --- FUNCIONES AUXILIARES ---
+def procesar_archivo_base64(texto_b64: str) -> str:
+    """Filtra la basura de Power Automate, decodifica y extrae el texto del Word."""
+    if "contentBytes" in texto_b64:
+        try:
+            obj = json.loads(texto_b64)
+            texto_b64 = obj.get("contentBytes", texto_b64)
+        except json.JSONDecodeError:
+            pass
+            
     try:
-        texto_b64 = peticion.archivo_base64
-        if "contentBytes" in texto_b64:
-            try:
-                obj = json.loads(texto_b64)
-                texto_b64 = obj.get("contentBytes", texto_b64)
-            except:
-                pass
-        
         contenido_binario = base64.b64decode(texto_b64)
         documento_io = io.BytesIO(contenido_binario)
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
+        return texto_completo
+    except Exception as e:
+        raise ValueError(f"Error al decodificar o leer el documento Word: {str(e)}")
+
+# --- ENDPOINT 1: LA AUDITORÍA ESTRICTA ---
+@app.post("/auditar-contrato")
+async def auditar_contrato(peticion: PeticionContrato):
+    try:
+        texto_completo = procesar_archivo_base64(peticion.archivo_base64)
         
         prompt_maestro = f"""
         Eres un auditor legal experto y MUY ESTRICTO. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
@@ -139,37 +157,26 @@ async def auditar_contrato(peticion: PeticionContrato):
 
         return datos
 
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
-# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL ---
+# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL (BLINDADO) ---
 @app.post("/preguntar-contrato")
 async def preguntar_contrato(peticion: PeticionPregunta):
     try:
-        # 1. Filtramos la basura de Power Automate igual que arriba
-        texto_b64 = peticion.archivo_base64
-        if "contentBytes" in texto_b64:
-            try:
-                obj = json.loads(texto_b64)
-                texto_b64 = obj.get("contentBytes", texto_b64)
-            except:
-                pass
+        # 1 y 2. Limpieza y lectura extraídas a la función auxiliar
+        texto_completo = procesar_archivo_base64(peticion.archivo_base64)
         
-        # 2. Leemos el Word
-        contenido_binario = base64.b64decode(texto_b64)
-        documento_io = io.BytesIO(contenido_binario)
-        doc = docx.Document(documento_io)
-        texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
-        
-        # 3. Prompt Estricto Anti-Alucinaciones + Regla Anti-Markdown
+        # 3. Prompt Estricto
         prompt_qa = f"""
-        Eres un asistente legal experto. Tu única tarea es responder a la pregunta del usuario basándote EXCLUSIVAMENTE en el texto del contrato proporcionado a continuación.
-        
-        REGLAS ESTRICTAS:
-        1. NO uses información de internet ni conocimientos externos.
-        2. Si la respuesta no está en el contrato, responde exactamente: "La información solicitada no se encuentra detallada en este contrato."
-        3. LÍMITE DE EXTENSIÓN (CRÍTICO): Tu respuesta NUNCA debe superar las 150 palabras. Si el usuario te pide un resumen general, extrae solo la esencia en un párrafo corto y directo.
+        Eres un asistente legal experto. Responde a la pregunta basándote EXCLUSIVAMENTE en el contrato proporcionado.
+        REGLAS:
+        1. NO uses información de internet.
+        2. Si no está en el contrato, responde: "La información solicitada no se encuentra detallada en este contrato."
+        3. MUY IMPORTANTE: Resume la respuesta. NUNCA superes las 150 palabras.
         
         [CONTRATO]
         {texto_completo}
@@ -179,32 +186,36 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         
         Devuelve ÚNICAMENTE un JSON con esta estructura:
         {{
-          "respuesta": "tu respuesta limpia y en texto plano aquí"
+          "respuesta": "tu respuesta aquí"
         }}
         """
         
-        # Generar respuesta
         respuesta = await modelo.generate_content_async(prompt_qa)
         datos = json.loads(respuesta.text)
         
-        # 4. Filtro Limpiador (La barredora final)
-        # Extraemos la respuesta cruda para quitarle cualquier carácter que pueda romper a Copilot Studio
+        # 4. EL BLINDAJE DEFINITIVO (Mejorado)
         respuesta_cruda = datos.get("respuesta", "")
-        texto_limpio = respuesta_cruda.replace("*", "").replace("\n", " ").replace("\"", "'").replace("- ", "")
         
-        # Eliminamos espacios dobles que hayan quedado al quitar los saltos de línea
+        # A) Guillotina
+        if len(respuesta_cruda) > 1500:
+            respuesta_cruda = respuesta_cruda[:1497] + "..."
+            
+        # B) Regex mejorado: Ahora permite comillas (""), corchetes ([]), y el símbolo de porcentaje (%). 
+        texto_limpio = re.sub(r'[^\w\s.,;:!?()\'"\[\]%áéíóúÁÉÍÓÚñÑüÜ-]', '', respuesta_cruda)
+        
+        # C) Eliminamos todos los saltos de línea
+        texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
+        
+        # D) Normalizamos los espacios
         texto_limpio = " ".join(texto_limpio.split()) 
         
-        # Actualizamos el JSON con el texto totalmente purificado
         datos["respuesta"] = texto_limpio
-        
         return datos
 
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        # MEJORA DE ESTABILIDAD: Si ocurre un error de lectura o procesamiento,
-        # en lugar de generar un Error 500 (que colapsa Copilot con un SystemError),
-        # devolvemos un JSON limpio con la explicación del error.
-        return {"respuesta": f"Hubo un error interno al procesar tu pregunta. Por favor, inténtalo de nuevo. Detalle: {str(e)}"}
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
