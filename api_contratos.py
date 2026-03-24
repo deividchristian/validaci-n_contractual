@@ -16,8 +16,7 @@ if not llave_secreta:
 
 genai.configure(api_key=llave_secreta)
 
-# 🔥 CORRECCIÓN 1: El modelo oficial y estable de Google
-modelo = genai.GenerativeModel('gemini-1.5-flash-latest')
+modelo = genai.GenerativeModel('gemini-pro')
 
 app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
