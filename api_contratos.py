@@ -16,8 +16,8 @@ if not llave_secreta:
 
 genai.configure(api_key=llave_secreta)
 
-# El modelo base genérico (para la auditoría)
-modelo = genai.GenerativeModel('gemini-2.5-flash')
+# 🔥 CORRECCIÓN 1: El modelo oficial y estable de Google
+modelo = genai.GenerativeModel('gemini-1.5-flash')
 
 app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
@@ -118,9 +118,16 @@ async def auditar_contrato(peticion: PeticionContrato):
             "nivel_cumplimiento": nivel,
             "recomendacion": recomendacion
         }
+        
+        # 🔥 CORRECCIÓN 2: Limpieza de RAM
+        del texto_completo
+        del prompt_maestro
+        
         return datos
 
     except Exception as e:
+        # 🔥 CORRECCIÓN 3: Imprimir el error real en la pantalla negra de Render
+        print(f"🔥 ERROR INTERNO EN AUDITORIA: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
@@ -128,7 +135,6 @@ async def auditar_contrato(peticion: PeticionContrato):
 @app.post("/preguntar-contrato")
 async def preguntar_contrato(peticion: PeticionPregunta):
     try:
-        # 1. Filtramos la basura
         texto_b64 = peticion.archivo_base64
         if "contentBytes" in texto_b64:
             try:
@@ -137,13 +143,11 @@ async def preguntar_contrato(peticion: PeticionPregunta):
             except:
                 pass
         
-        # 2. Leemos el Word
         contenido_binario = base64.b64decode(texto_b64)
         documento_io = io.BytesIO(contenido_binario)
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
-        # 3. Prompt Estricto (¡SIN PEDIR JSON!)
         prompt_qa = f"""
         Eres un asistente legal experto. Responde a la pregunta basándote EXCLUSIVAMENTE en el contrato.
         
@@ -159,21 +163,22 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         {peticion.pregunta}
         """
         
-        # 4. Le pedimos texto normal a Gemini (Le quitamos la obligación de hacer JSON)
         respuesta = await modelo.generate_content_async(prompt_qa)
         respuesta_cruda = respuesta.text
         
-        # 5. Limpiamos cualquier símbolo raro que haya puesto
         texto_limpio = re.sub(r'[^\w\s.,;:!?()\'áéíóúÁÉÍÓÚñÑüÜ-]', '', respuesta_cruda)
         texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
         texto_limpio = " ".join(texto_limpio.split()) 
         
-        # 6. NOSOTROS ARMAMOS EL JSON MANUALMENTE (Esto nunca fallará)
         datos = {"respuesta": texto_limpio}
+        
+        del texto_completo
+        del prompt_qa
         
         return datos
 
     except Exception as e:
+        print(f"🔥 ERROR INTERNO EN PREGUNTAS: {str(e)}")
         return {"respuesta": f"Error de procesamiento: {str(e)[:100]}"}
 
 if __name__ == "__main__":
