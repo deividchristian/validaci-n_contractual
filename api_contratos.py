@@ -5,7 +5,6 @@ import io
 import json
 import base64
 import os
-import PyPDF2
 import re
 import google.generativeai as genai
 
@@ -28,20 +27,6 @@ async def despertar_servidor():
 @app.head("/")
 async def despertar_servidor_head():
     return {"estado": "OK"}
-
-def leer_pdf_completo(ruta_archivo):
-    texto_extraido = ""
-    try:
-        with open(ruta_archivo, "rb") as archivo:
-            lector = PyPDF2.PdfReader(archivo)
-            for pagina in lector.pages:
-                texto_extraido += pagina.extract_text() + "\n"
-    except Exception:
-        texto_extraido = "Error al leer el documento legal."
-    return texto_extraido
-
-LEY_RGPD_COMPLETA = leer_pdf_completo("RGPD_SPAIN.pdf")
-LEY_DORA_COMPLETA = leer_pdf_completo("DORA_SPAIN.pdf")
 
 # --- MODELOS DE DATOS ---
 class PeticionContrato(BaseModel):
@@ -69,21 +54,16 @@ async def auditar_contrato(peticion: PeticionContrato):
         doc = docx.Document(documento_io)
         texto_completo = "\n".join([parrafo.text for parrafo in doc.paragraphs if parrafo.text.strip()])
         
+        # PROMPT OPTIMIZADO (Sin los PDFs pesados, confiando en el conocimiento experto de la IA)
         prompt_maestro = f"""
-        Eres un auditor legal experto y MUY ESTRICTO. Evalúa el contrato contra el texto íntegro del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
-        
-        [LEY EUROPEA DE REFERENCIA RGPD]
-        {LEY_RGPD_COMPLETA}
-        
-        [NORMATIVA BANCARIA DORA]
-        {LEY_DORA_COMPLETA}
+        Eres un auditor legal experto y MUY ESTRICTO. Evalúa el siguiente contrato basándote en tu conocimiento experto del Reglamento General de Protección de Datos (RGPD) y el Reglamento DORA.
         
         [CONTRATO A ANALIZAR]
         {texto_completo}
         
         TAREAS OBLIGATORIAS:
         1. Extrae la información básica: proveedor, tipo_contrato, duracion, fecha.
-        2. Evalúa EXHAUSTIVAMENTE 5 controles RGPD y 6 controles DORA.
+        2. Evalúa EXHAUSTIVAMENTE 5 controles clave del RGPD y 6 controles clave de DORA.
         
         REGLAS DE FORMATO ESTRICTAS:
         - 'estado': DEBE SER EXACTAMENTE "OK", "Falta", o "Riesgo".
@@ -127,19 +107,18 @@ async def auditar_contrato(peticion: PeticionContrato):
             "recomendacion": recomendacion
         }
         
-        # 🔥 CORRECCIÓN 2: Limpieza de RAM
+        # 🔥 Limpieza de RAM
         del texto_completo
         del prompt_maestro
         
         return datos
 
     except Exception as e:
-        # 🔥 CORRECCIÓN 3: Imprimir el error real en la pantalla negra de Render
         print(f"🔥 ERROR INTERNO EN AUDITORIA: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
-# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL (INFALIBLE) ---
+# --- ENDPOINT 2: EL NUEVO CHATBOT CONVERSACIONAL ---
 @app.post("/preguntar-contrato")
 async def preguntar_contrato(peticion: PeticionPregunta):
     try:
@@ -188,6 +167,7 @@ async def preguntar_contrato(peticion: PeticionPregunta):
     except Exception as e:
         print(f"🔥 ERROR INTERNO EN PREGUNTAS: {str(e)}")
         return {"respuesta": f"Error de procesamiento: {str(e)[:100]}"}
+
 
 # --- ENDPOINT DE DIAGNÓSTICO (EL ESCÁNER) ---
 @app.get("/modelos-disponibles")
