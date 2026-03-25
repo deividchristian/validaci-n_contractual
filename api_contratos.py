@@ -16,7 +16,7 @@ if not llave_secreta:
 
 genai.configure(api_key=llave_secreta)
 
-modelo = genai.GenerativeModel('gemini-pro')
+modelo = genai.GenerativeModel('gemini-2.5-flash')
 
 app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
