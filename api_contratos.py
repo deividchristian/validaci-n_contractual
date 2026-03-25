@@ -180,6 +180,18 @@ async def preguntar_contrato(peticion: PeticionPregunta):
         print(f"🔥 ERROR INTERNO EN PREGUNTAS: {str(e)}")
         return {"respuesta": f"Error de procesamiento: {str(e)[:100]}"}
 
+# --- ENDPOINT DE DIAGNÓSTICO (EL ESCÁNER) ---
+@app.get("/modelos-disponibles")
+async def listar_modelos():
+    try:
+        modelos_permitidos = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                modelos_permitidos.append(m.name)
+        return {"modelos_que_puedes_usar": modelos_permitidos}
+    except Exception as e:
+        return {"error_google": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
