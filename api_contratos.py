@@ -20,6 +20,15 @@ modelo = genai.GenerativeModel('gemini-2.5-flash')
 
 app = FastAPI(title="Auditor Legal IA - Enterprise Final")
 
+# --- TIMBRE PARA UPTIMEROBOT ---
+@app.get("/")
+async def despertar_servidor():
+    return {"estado": "El servidor está despierto y listo."}
+
+@app.head("/")
+async def despertar_servidor_head():
+    return {"estado": "OK"}
+
 def leer_pdf_completo(ruta_archivo):
     texto_extraido = ""
     try:
